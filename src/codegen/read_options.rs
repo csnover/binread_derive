@@ -742,6 +742,10 @@ fn write_end_struct() -> TokenStream {
 }
 
 fn get_maps(field_attrs: &[FieldLevelAttrs], types: &[&Type]) -> Vec<TokenStream> {
+    let coerce_fn = quote! {
+        fn __binread_coerce<R, F, T>(f: F) -> F where F: Fn(T) -> R { f }
+    };
+
     field_attrs
         .iter()
         .zip(types.iter())
@@ -749,8 +753,9 @@ fn get_maps(field_attrs: &[FieldLevelAttrs], types: &[&Type]) -> Vec<TokenStream
             if let Map::Try(try_map) = &field_attrs.map {
                 quote!{ {
                     let #SAVED_POSITION = #SEEK_TRAIT::seek(#READER, #SEEK_FROM::Current(0))?;
-                    let __binread_try_map: fn(_) -> ::core::result::Result<#ty, _> = #try_map;
-                    (__binread_try_map)(__binread_temp).map_err(|e| {
+
+                    #coerce_fn
+                    (__binread_coerce::<::core::result::Result<#ty, _>, _, _>(#try_map))(__binread_temp).map_err(|e| {
                         #BIN_ERROR::Custom {
                             pos: #SAVED_POSITION as _,
                             err: Box::new(e) as _,
@@ -759,8 +764,8 @@ fn get_maps(field_attrs: &[FieldLevelAttrs], types: &[&Type]) -> Vec<TokenStream
                 } }
             } else if let Map::Map(map) = &field_attrs.map {
                 quote!{ {
-                    let __binread_map: fn(_) -> #ty = #map;
-                    (__binread_map)(__binread_temp)
+                    #coerce_fn
+                    (__binread_coerce::<#ty, _, _>(#map))(__binread_temp)
                 } }
             } else {
                 quote!{ __binread_temp }
